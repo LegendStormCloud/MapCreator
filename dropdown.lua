@@ -2,30 +2,30 @@ local Object = require "libraries.classic"
 local utils = require "utils"
 local DropDown = Object:extend()
 
-function DropDown:new(x, y, w, h, bColor, hpad, vpad, extW, extH, content, onclick, tooltip, bPath)
-    self.x = x
-    self.y = y
-    self.width = w
-    self.height = h
-    self.extended_width = extW
-    self.extended_height = extH
+function DropDown:new(params)
+    self.x = params.x
+    self.y = params.y
+    self.width = params.w
+    self.height = params.h
+    self.extended_width = params.extW
+    self.extended_height = params.extH
     
-    self.background_color = bColor or {1,1,1,1}
+    self.background_color = params.bColor or {1,1,1,1}
     
-    self.horizontal_padding = hpad
-    self.vertical_padding = vpad
+    self.horizontal_padding = params.hpad
+    self.vertical_padding = params.vpad
     
-    self.content = {}
+    self.content = params.content or {}
     if content then
         for name, item in pairs(content) do
             self:addContent(name, item)
         end
     end
     
-    self.onclickfunction = onclick
+    self.onclickfunction = params.onclick
     
-    self.tooltip = tooltip or ""
-    self.background_sprite = bPath and love.graphics.newImage(bPath) or nil
+    self.tooltip = params.tooltip or ""
+    self.background_sprite = params.bPath and love.graphics.newImage(params.bPath) or nil
     self.is_open = false
 
     self.scrollOffsetY = 0

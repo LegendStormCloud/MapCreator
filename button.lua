@@ -2,19 +2,19 @@ local Object = require "libraries.classic"
 
 local Button = Object:extend()
 
-function Button:new(x, y, w, h, bColor, onclick, tooltip, bPath)
-    self.x = x
-    self.y = y
-    self.width = w
-    self.height = h
+function Button:new(params)
+    self.x = params.x
+    self.y = params.y
+    self.width = params.w
+    self.height = params.h
 
-    self.background_color = bColor or (bPath == nil and {0.141, 0.125, 0.125, 1} or {1, 1, 1, 1})
+    self.background_color = params.bColor or (params.bPath == nil and {0.141, 0.125, 0.125, 1} or {1, 1, 1, 1})
 
-    self.onclickfunction = onclick
+    self.onclickfunction = params.onclick
 
-    self.tooltip = tooltip or ""
+    self.tooltip = params.tooltip
 
-    self.background_sprite = bPath and love.graphics.newImage(bPath) or nil
+    self.background_sprite = params.bPath and love.graphics.newImage(params.bPath) or nil
 
     self.toggled = false
 end
@@ -31,25 +31,25 @@ end
 
 function Button:drawTooltip(mx, my)
     if not self:inside(mx, my) then return end
-    if self.tooltip == "" then return end
+    if self.tooltip then
+        local font = love.graphics.getFont()
+        local lw = love.graphics.getLineWidth()
+        
+        local w = font:getWidth(self.tooltip) + 2*lw
+        local h = font:getHeight(self.tooltip) + 2*lw
 
-    local font = love.graphics.getFont()
-    local lw = love.graphics.getLineWidth()
-    
-    local w = font:getWidth(self.tooltip) + 2*lw
-    local h = font:getHeight(self.tooltip) + 2*lw
+        local x, y = mx, my - h
 
-    local x, y = mx, my - h
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.rectangle("fill", x, y, w, h)
 
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.rectangle("fill", x, y, w, h)
+        love.graphics.setColor(0, 0, 0, 1)
+        love.graphics.rectangle("line", x, y, w, h)
 
-    love.graphics.setColor(0, 0, 0, 1)
-    love.graphics.rectangle("line", x, y, w, h)
+        love.graphics.print(self.tooltip, x+lw, y+lw)
 
-    love.graphics.print(self.tooltip, x+lw, y+lw)
-
-    love.graphics.setColor(1,1,1,1)
+        love.graphics.setColor(1,1,1,1)
+    end
 end
 
 function Button:draw()

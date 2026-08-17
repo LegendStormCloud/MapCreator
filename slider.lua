@@ -4,33 +4,33 @@ local Object = require "libraries.classic"
 
 local Slider = Object:extend()
 
-function Slider:new(x, y, fOffsetX, fOffsetY, bWidth, bHeight, bCol, fWidth, fHeight, fCol, dir, wholeN, minVal, maxVal, v, onvalchanged, interactive, hRadius)
-    self.x = x
-    self.y = y
-    self.foreground_offsetX = fOffsetX or 5
-    self.foreground_offsetY = fOffsetY or 2.5
+function Slider:new(params)
+    self.x = params.x
+    self.y = params.y
+    self.foreground_offsetX = params.fOffsetX or 5
+    self.foreground_offsetY = params.fOffsetY or 5
 
-    self.background_width = bWidth or 100
-    self.background_height = bHeight or 50
-    self.background_color = bCol or {0, 0, 0, 1}
+    self.background_width = params.bWidth or 100
+    self.background_height = params.bHeight or 50
+    self.background_color = params.bCol or {0, 0, 0, 1}
 
-    self.foreground_width = fWidth or 90
-    self.foreground_height = fHeight or 45
-    self.foreground_color = fCol or {1,1,1,1}
+    self.foreground_width = params.fWidth or 90
+    self.foreground_height = params.fHeight or 45
+    self.foreground_color = params.fCol or {1,1,1,1}
 
-    self.direction = dir or "lTr"
+    self.direction = params.dir or "lTr"
 
-    self.wholeNumbers = wholeN or false
-    self.minValue = minVal or 0
-    self.maxValue = maxVal or 1
-    self.value = math.clamp(minVal, maxVal, v or 0)
-    self.onvaluechanged_action = onvalchanged
+    self.wholeNumbers = params.wholeN or false
+    self.minValue = params.minVal or 0
+    self.maxValue = params.maxVal or 1
+    self.value = math.clamp(params.minVal, params.maxVal, params.v or 0)
+    self.onvaluechanged_action = params.onvalchanged
 
-    self.interactive = interactive or false
+    self.interactive = params.interactive or false
 
     self.handle_centerX = 0
     self.handle_centerY = 0
-    self.handle_radius = hRadius or foreground_height/2
+    self.handle_radius = params.hRadius or self.foreground_height/2
 
     self.dragging = false
 end

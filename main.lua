@@ -6,8 +6,8 @@ local utils = require "utils"
 
 local SAVEDIR = love.filesystem.getSaveDirectory()
 
-local MIN_WINDOW_WIDTH = 800
-local MIN_WINDOW_HEIGHT = 600
+local MIN_WINDOW_WIDTH = 1280
+local MIN_WINDOW_HEIGHT = 720
 local CANVAS_SIZE = 1500
 
 local UI_LEFT_SAFEZONE = 175
@@ -29,6 +29,10 @@ local placingLandmarks = false
 local removingLandmark = false
 
 local currentLandmark = nil
+
+--TO REMOVE: SCALE
+--STANDARD LANDMARK DIMENSION 512X512 OR 256X256 (GOTTA DECIDE YET)
+--DRAWING NEEDS TO BE ALREADY SCALED
 local landmark_sprites = {
     mountain = {
         img = love.graphics.newImage("sprites/landmarks/mountain.png"),
@@ -48,9 +52,9 @@ local landmark_sprites = {
 
 local landmarks = {}
 
-local lmCooldown = 0.275
+local landmarkPlacingCooldown = 0.275
 local lmTimer = 0
-local lmScale = 1
+local landmarkScale = 1
 
 local lmbDown = false
 local rmbDown = false
@@ -80,7 +84,7 @@ local seed
 --love functions
 
 function love.load()
-    love.window.setMode(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT, {resizable = true})
+    love.window.setMode(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT, {resizable = true, minwidth = MIN_WINDOW_WIDTH, minheight = MIN_WINDOW_HEIGHT})
 
     mapCanvas = love.graphics.newCanvas(CANVAS_SIZE, CANVAS_SIZE)
 
@@ -89,7 +93,7 @@ function love.load()
     love.math.setRandomSeed(os.time())
     seed = love.math.getRandomSeed()
 
-    gen.load(CANVAS_SIZE, seed, rowHexes, amplitude, noiseScale) --canvas size, targetNx, scala, ampiezza noise
+    gen.load(CANVAS_SIZE, rowHexes, amplitude, noiseScale, seed)
 
     addUIElements()
 end
@@ -145,10 +149,6 @@ function love.wheelmoved(x, y)
 end
 
 function love.resize(w, h)
-    if w < MIN_WINDOW_WIDTH or h < MIN_WINDOW_HEIGHT then
-        love.window.setMode(math.max(MIN_WINDOW_WIDTH, w), math.max(MIN_WINDOW_HEIGHT, h), {resizable = true})
-    end
-
     updateViewport()
 end
 
@@ -201,95 +201,127 @@ end
 -- miscellaneus
 
 function addUIElements()
+    --Buttons: x, y, w, h, bColor, onclick, tooltip, bPath
+
     UIM.addButton(
-        "paint", UL[1] + 10, UL[2], 50, 50, {0.25, 0.25, 0.25, 1},
-        function(btn)
-            paintingHexagons = not paintingHexagons
-            placingLandmarks = false
-            removingLandmark = false
+        "paint", 
+        {
+            x = UL[1] + 10, y = UL[2], w = 50, h = 50, bColor = {0.25, 0.25, 0.25, 1},
+            onclick = function(btn)
+                paintingHexagons = not paintingHexagons
+                placingLandmarks = false
+                removingLandmark = false
 
-            btn.toggled = not btn.toggled
+                btn.toggled = not btn.toggled
 
-            UIM.getDropDown("landmarks").is_open = false
-            UIM.getSlider("scale_lm").interactive = false
-            lmTimer = lmCooldown
-            currentLandmark = nil
-        end,
-        "paint (lmb: land / rmb: water)", "sprites/paint_brush_icon.png"
+                UIM.getDropDown("landmarks").is_open = false
+                UIM.getSlider("scale_lm").interactive = false
+                lmTimer = landmarkPlacingCooldown
+                currentLandmark = nil
+            end,
+            tooltip = "paint (lmb: land / rmb: water)", bPath = "sprites/paint_brush_icon.png"
+        }
     )
 
     UIM.addButton(
-        "remove_landmark", UL[1] + 65, UL[2] + 55, 50, 50, {0.25, 0.25, 0.25, 1},
-        function(btn)
-            removingLandmark = true
-            paintingHexagons = false
-            placingLandmarks = false
+        "remove_landmark",
+        {
+            x = UL[1] + 65, y = UL[2] + 55, w = 50, h = 50, bColor = {0.25, 0.25, 0.25, 1},
+            onclick = function(btn)
+                removingLandmark = true
+                paintingHexagons = false
+                placingLandmarks = false
 
-            UIM.getButton("paint").toggled = not paintingHexagons
-            UIM.getDropDown("landmarks").is_open = false
-            UIM.getSlider("scale_lm").interactive = false
+                UIM.getButton("paint").toggled = not paintingHexagons
+                UIM.getDropDown("landmarks").is_open = false
+                UIM.getSlider("scale_lm").interactive = false
 
-            currentLandmark = nil
-        end,
-        "remove landmark (lmb: single / rmb: all)", "sprites/remove_landmark_icon.png"
+                currentLandmark = nil
+            end,
+            tooltip = "remove landmark (lmb: single / rmb: all)", bPath = "sprites/remove_landmark_icon.png"
+        }
     )
 
     UIM.addButton(
-        "export", UR[1] - 60, UT[2] + 5, 50, 50, {0.25, 0.25, 0.25, 1},
-        function()
-            exportMap()
-        end,
-        "export map", "sprites/export_icon.png"
+        "export",
+        {
+            x = UR[1] - 60, y = UT[2] + 5, w = 50, h = 50, bColor = {0.25, 0.25, 0.25, 1},
+            onclick = function()
+                exportMap()
+            end,
+            tooltip = "export", bPath = "sprites/export_icon.png"
+        }
     )
+
+    -- DD: x, y, w, h, bColor, hpad, vpad, extW, extH, content, onclick, tooltip, bPath
 
     UIM.addDropDown(
-        "landmarks", UL[1] + 10, UL[2] + 55, 50, 50, {0.25, 0.25, 0.25, 1}, 5, 5, 155, 350, {},
-        function(dd)
-            placingLandmarks = dd.is_open
-            paintingHexagons = not dd.is_open
+        "landmarks",
+        { 
+            x = UL[1] + 10, y = UL[2] + 55, w = 50, h = 50, bColor = {0.25, 0.25, 0.25, 1}, hpad = 5, vpad = 5, extW = 155, extH = 350,
+            onclick = function(dd)
+                placingLandmarks = dd.is_open
+                paintingHexagons = not dd.is_open
 
-            UIM.getButton("paint").toggled = not paintingHexagons
-            UIM.getSlider("scale_lm").interactive = placingLandmarks
+                UIM.getButton("paint").toggled = not paintingHexagons
+                UIM.getSlider("scale_lm").interactive = placingLandmarks
 
-            removingLandmark = false
-            currentLandmark = nil
-        end,
-        "open landmark menu", "sprites/add_landmark_icon.png"
+                removingLandmark = false
+                currentLandmark = nil
+            end,
+            tooltip = "open landmark menu", bPath = "sprites/add_landmark_icon.png"
+        }
+    )
+
+    --Buttons: x, y, w, h, bColor, onclick, tooltip, bPath
+    
+    UIM.addDropDownButton(
+        "landmarks",
+        "add_skull", 
+        {
+            x = 0, y = 0, w = 45, h = 45, bColor = {0.8, 0.8, 0.8, 1},
+            onclick = function()
+                currentLandmark = "skull"
+            end,
+            bPath = "sprites/landmarks/skull.png"
+        }
     )
 
     UIM.addDropDownButton(
         "landmarks",
-        "add_skull", 0, 0, 45, 45, {0.8, 0.8, 0.8, 1},
-        function()
-            currentLandmark = "skull"
-        end,
-        "", "sprites/landmarks/skull.png"
+        "add_tower", 
+        {
+            x = 0, y = 0, w = 45, h = 45, bColor = {0.8, 0.8, 0.8, 1},
+            onclick = function()
+                currentLandmark = "tower"
+            end,
+            bPath = "sprites/landmarks/tower.png"
+        }
     )
 
     UIM.addDropDownButton(
         "landmarks",
-        "add_tower", 0, 0, 45, 45, {0.8, 0.8, 0.8, 1},
-        function()
-            currentLandmark = "tower"
-        end,
-        "", "sprites/landmarks/tower.png"
+        "add_mountain", 
+        {
+            x = 0, y = 0, w = 45, h = 45, bColor = {0.8, 0.8, 0.8, 1},
+            onclick = function()
+                currentLandmark = "mountain"
+            end,
+            bPath = "sprites/landmarks/mountain.png"
+        }
     )
 
-    UIM.addDropDownButton(
-        "landmarks",
-        "add_mountain", 0, 0, 45, 45, {0.8, 0.8, 0.8, 1},
-        function()
-            currentLandmark = "mountain"
-        end,
-        "", "sprites/landmarks/mountain.png"
-    )
-
+    -- Slider: x, y, fOffsetX, fOffsetY, bWidth, bHeight, bCol, fWidth, fHeight, fCol, dir, wholeN, minVal, maxVal, v, onvalchanged, interactive, hRadius
     UIM.addSlider(
-        "scale_lm", UL[1] + 10, UL[2] + 485, 5, 5, 155, 40, {0.25, 0.25, 0.25}, 145, 30, {0.7, 0.7, 0.7}, "lTr", false, 0.5, 2, 1,
-        function(sli)
-            lmScale = sli.value
-        end,
-        false, 15
+        "scale_lm",
+        {
+            x = UL[1] + 10, y = UL[2] + 485, fOffsetX = 5, fOffsetY = 5, bWidth = 155, bHeight = 40, bCol = {0.25, 0.25, 0.25},
+            fWidth = 145, fHeight = 30, fCol = {0.7, 0.7, 0.7},
+            minVal = 0.5, maxVal = 2, v = 1,
+            onvalchanged = function(sli)
+                landmarkScale = sli.value
+            end
+        }
     )
 end
 
@@ -310,7 +342,7 @@ function updateViewport()
 end
 
 function updateActiveInput(newText)
-    local changed = false
+    local changed, resetMap = false, false
     
     local formatted = newText:gsub(",", ".")
     local num = tonumber(formatted) or 0
@@ -319,6 +351,7 @@ function updateActiveInput(newText)
         rowHexesIText = newText
         rowHexes = num
         changed = true
+        resetMap = true
     elseif noiseScaleInput then
         noiseScaleIText = newText
         noiseScale = num
@@ -330,7 +363,7 @@ function updateActiveInput(newText)
     end
 
     if changed then
-        gen.generate(CANVAS_SIZE, rowHexes, amplitude, noiseScale)
+        gen.generate(CANVAS_SIZE, rowHexes, amplitude, noiseScale, seed, resetMap)
     end
 end
 
@@ -358,7 +391,7 @@ function drawLandMarkPreview()
     local img = lms.img
     local mx, my = getCanvasMousePosition()
     local ox, oy = img:getWidth()/2, img:getHeight()/2
-    love.graphics.draw(img, mx, my, 0, lms.scale * lmScale, lms.scale * lmScale, ox, oy)
+    love.graphics.draw(img, mx, my, 0, lms.scale * landmarkScale, lms.scale * landmarkScale, ox, oy)
 end
 
 function drawShorelineWaves()
@@ -454,7 +487,7 @@ function drawUI()
     love.graphics.print(mouseCoordinates_TXT, UL[1] + UI_LEFT_SAFEZONE + 10, UI_TOP_SAFEZONE + 10)
     love.graphics.print("f1: toggle center vis, f2: toggle edge vis, f3: toggle fill vis, f4: toggle vertices, f5: toggle terrain, f6: toggle textures", UT[1] + 10, UT[2] + 30)
 
-    local lmscaleTXT = math.round(10000*lmScale)/100 .. "%"
+    local lmscaleTXT = math.round(10000*landmarkScale)/100 .. "%"
     love.graphics.print("landmark scale: " .. lmscaleTXT, UL[1] + 10, UL[2] + 465)
 
     local mx, my = love.mouse.getPosition(x, y)
@@ -469,7 +502,7 @@ end
 
 -- modifing map
 
-function ModifyMap()
+function modifyMap()
     tryPaintingHexagon()
     tryPlacingLandmark()
     tryRemovingLandmark()
@@ -516,8 +549,8 @@ function tryPlacingLandmark()
     local lm = landmark_sprites[currentLandmark]
     local img = lm.img
     local ox, oy = img:getWidth()/2, img:getHeight()/2
-    table.insert(landmarks, {img, mx, my, lm.scale * lmScale, ox, oy})
-    lmTimer = lmCooldown
+    table.insert(landmarks, {img, mx, my, lm.scale * landmarkScale, ox, oy})
+    lmTimer = landmarkPlacingCooldown
 end
 
 function tryRemovingLandmark()
