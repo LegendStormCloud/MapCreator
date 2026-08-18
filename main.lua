@@ -1,10 +1,9 @@
 local utf8 = require "utf8"
+local json = "libraries.json"
 
 local gen = require "generator"
 local UIM = require "uimanager"
 local utils = require "utils"
-
-local SAVEDIR = love.filesystem.getSaveDirectory()
 
 local MIN_WINDOW_WIDTH = 1280
 local MIN_WINDOW_HEIGHT = 720
@@ -31,8 +30,10 @@ local removingLandmark = false
 local currentLandmark = nil
 
 --TO REMOVE: SCALE
+--TO ADD: CATEGORY: 
 --STANDARD LANDMARK DIMENSION 512X512 OR 256X256 (GOTTA DECIDE YET)
---DRAWING NEEDS TO BE ALREADY SCALED
+--DRAWING NEEDS TO BE ALREADY PROPORTIONED
+
 local landmark_sprites = {
     mountain = {
         img = love.graphics.newImage("sprites/landmarks/mountain.png"),
@@ -74,6 +75,8 @@ local waveSegments = 12
 local scrollspeed = 50
 local seed
 
+--FOR THE FUTURE: ADD CUSTOM CURSOR FOR DIFFERENT EDITING MODES (THIS WILL REMOVE THE DEBUG FOR PAINTING, PLACING, REMOVING)
+
 --love functions
 
 function love.load()
@@ -98,10 +101,6 @@ function love.keypressed(key)
     if key == "f4" then gen.debugFlags["show_vertices"] = not gen.debugFlags["show_vertices"] end
     if key == "f5" then gen.debugFlags["show_terrain"] = not gen.debugFlags["show_terrain"] end
     if key == "f6" then gen.debugFlags["use_textures"] = not gen.debugFlags["use_textures"] end
-
-    --if key == "r" then rowHexesInput = not rowHexesInput end
-    --if key == "s" then noiseScaleInput = not noiseScaleInput end
-    --if key == "a" then noiseAmplitudeInput = not noiseAmplitudeInput end
 
     --if key == "l" then importAndLoadSettingsFile() end
     --if key == "e" then exportSettingsFile() end
@@ -201,6 +200,17 @@ function addUIElements()
     )
 
     UIM.addButton(
+        "settings",
+        {
+            x = UL[1] + 65, y = UL[2], w = 50, h = 50, bColor = {0.25, 0.25, 0.25, 1},
+            onclick = function()
+                UIM.toggleGroup("settings")
+            end,
+            tooltip = "settings panel", bPath = "sprites/settings_icon.png"
+        }
+    )
+
+    UIM.addButton(
         "remove_landmark",
         {
             x = UL[1] + 65, y = UL[2] + 55, w = 50, h = 50, bColor = {0.25, 0.25, 0.25, 1},
@@ -253,8 +263,7 @@ function addUIElements()
     --Buttons: x, y, w, h, bColor, onclick, tooltip, bPath
     
     UIM.addDropDownButton(
-        "landmarks",
-        "add_skull", 
+        "landmarks", 
         {
             x = 0, y = 0, w = 45, h = 45, bColor = {0.8, 0.8, 0.8, 1},
             onclick = function()
@@ -265,8 +274,7 @@ function addUIElements()
     )
 
     UIM.addDropDownButton(
-        "landmarks",
-        "add_tower", 
+        "landmarks", 
         {
             x = 0, y = 0, w = 45, h = 45, bColor = {0.8, 0.8, 0.8, 1},
             onclick = function()
@@ -277,8 +285,7 @@ function addUIElements()
     )
 
     UIM.addDropDownButton(
-        "landmarks",
-        "add_mountain", 
+        "landmarks", 
         {
             x = 0, y = 0, w = 45, h = 45, bColor = {0.8, 0.8, 0.8, 1},
             onclick = function()
@@ -305,6 +312,7 @@ function addUIElements()
     UIM.addInputField(
         "row_hexes",
         {
+            group = "settings",
             x = UL[1] + UI_LEFT_SAFEZONE + 10, y = UL[2] + 80, w = 150, h = 50, bColor = {0.25, 0.25, 0.25}, border = true,
             borColor = {1,1,1}, borThickness = 1, pad = 4, isNumeric = true,
             ontxtfunc = function(inpf)
@@ -319,6 +327,7 @@ function addUIElements()
     UIM.addInputField(
         "noise_amplitude",
         {
+            group = "settings",
             x = UL[1] + UI_LEFT_SAFEZONE + 10, y = UL[2] + 140, w = 150, h = 50, bColor = {0.25, 0.25, 0.25}, border = true,
             borColor = {1,1,1}, borThickness = 1, pad = 4, isNumeric = true,
             ontxtfunc = function(inpf)
@@ -333,6 +342,7 @@ function addUIElements()
     UIM.addInputField(
         "noise_scale",
         {
+            group = "settings",
             x = UL[1] + UI_LEFT_SAFEZONE + 10, y = UL[2] + 200, w = 150, h = 50, bColor = {0.25, 0.25, 0.25}, border = true,
             borColor = {1,1,1}, borThickness = 1, pad = 4, isNumeric = true,
             ontxtfunc = function(inpf)
@@ -570,12 +580,57 @@ end
 
 -- file managment
 
-function exportSettingsFile()
+local function createSaveFile(filepath, data)
+    local dir = filepath:match("(.+)/[^/]+$")
+    if dir then
+        love.filesystem.createDirectory(dir)
+    end
+    
+    local jsonString = json.encode(data)
 
+    local success, message = love.filesystem.write(filepath, jsonString)
+    
+    if success then
+        print("file save to: " .. filepath)
+    else
+        print("ERROR: " .. tostring(message))
+    end
 end
 
-function importAndLoadSettingsFile()
+-- all settings: seed, rowHexes, amplitude, scale
 
+function saveSettings()
+    local settingsData = 
+    {
+        seed = seed,
+        rowHexes = rowHexes
+        noiseAmplitude = noiseAmplitude
+        noiseScale = noiseScale
+    }
+
+    local timestamp = os.date("%Y-%m-%d_%H-%M-%S")
+
+    createSaveFile("Settings/setting_" .. timestamp .. ".json", settingsData)
+end
+
+-- all data: debug_flags, settings, all landmarks (image + scale)
+
+function saveMap()
+    local mapData =
+    {
+        map = gen.getMap(),
+        debugFlags = gen.debugFlags,
+        landmarks = landmarks
+    }
+
+    local timestamp = os.date("%Y-%m-%d_%H-%M-%S")
+
+    createSaveFile("MapSaves/save_" .. timestamp .. ".json", mapData)
+end
+
+function loadLandmarksFromDir(dirPath)
+    -- read all files in dirpath
+    -- add to landmark_sprites (follow landmark_sprites rules)
 end
 
 function exportMap()

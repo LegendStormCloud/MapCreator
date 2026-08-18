@@ -16,9 +16,11 @@ function DropDown:new(params)
     self.vertical_padding = params.vpad
     
     self.content = params.content or {}
+
+    --content passed needs to be like {{name1 = item1}, {name2 = item2}, ...} (if any is passed)
     if content then
-        for name, item in pairs(content) do
-            self:addContent(name, item)
+        for i, item in ipairs(content) do
+            self:addContent(item)
         end
     end
     
@@ -38,8 +40,8 @@ function DropDown:updateLayout()
     local itm_size = (self.extended_width - 3 * self.horizontal_padding) / 2
     if itm_size < 1 then return end
 
-    local i = 1
-    for name, item in pairs(self.content) do
+    for i, entry in ipairs(self.content) do
+        local item = entry.name
         local idx = i - 1 
         
         local col = idx % 2 
@@ -49,18 +51,28 @@ function DropDown:updateLayout()
         item.y = oy + row * (itm_size + self.vertical_padding)
         item.width = itm_size
         item.height = itm_size
-
-        i = i + 1
     end
 end
 
-function DropDown:addContent(name, item)
-    self.content[name] = item
+function DropDown:addContent(item)
+    table.insert(self.content, item)
     self:updateLayout()
 end
 
-function DropDown:removeContent(name)
-    self.content[name] = nil
+function DropDown:removeContent(cond) --current supported conditions: single number, name
+    local indx = tonumber(cond)
+
+    if indx then
+        table.remove(self.content, indx)
+    else
+        for i = #self.content, 1, -1 do
+            if self.content[i].name == cond then
+                table.remove(self.content, i)
+                break
+            end
+        end
+    end
+
     self:updateLayout()
 end
 
@@ -80,8 +92,8 @@ function DropDown:mousepressed(mx, my)
 
     if self.is_open then
         if self:inside(mx, my) then
-            for name, item in pairs(self.content) do
-                item:mousepressed(mx, my)
+            for _, entry in ipairs(self.content) do
+                entry.name:mousepressed(mx, my)
             end
         end
     end
@@ -145,8 +157,8 @@ function DropDown:draw()
 
         love.graphics.setStencilTest("greater", 0)
 
-        for name, item in pairs(self.content) do
-            item:draw()
+        for _, entry in ipairs(self.content) do
+            entry.name:draw()
         end
 
         love.graphics.setStencilTest()
