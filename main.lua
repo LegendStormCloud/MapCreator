@@ -1,4 +1,4 @@
-local utf8 = require("utf8")
+local utf8 = require "utf8"
 
 local gen = require "generator"
 local UIM = require "uimanager"
@@ -59,17 +59,9 @@ local landmarkScale = 1
 local lmbDown = false
 local rmbDown = false
 
-local rowHexesInput = false
-local noiseScaleInput = false
-local noiseAmplitudeInput = false
-
 local rowHexes = 10
 local noiseScale = 0.05
-local amplitude = 17
-
-local rowHexesIText = tostring(rowHexes)
-local noiseScaleIText = tostring(noiseScale)
-local noiseAmplitudeIText = tostring(amplitude)
+local noiseAmplitude = 17
 
 local shoreSmoothness = 0.5
 local waveColor = {0.7, 0.9, 1.0, 0.85}
@@ -79,6 +71,7 @@ local waveFrequency = 0.08
 local waveSpeed = 3.0
 local waveSegments = 12
 
+local scrollspeed = 50
 local seed
 
 --love functions
@@ -93,7 +86,7 @@ function love.load()
     love.math.setRandomSeed(os.time())
     seed = love.math.getRandomSeed()
 
-    gen.load(CANVAS_SIZE, rowHexes, amplitude, noiseScale, seed)
+    gen.load(CANVAS_SIZE, rowHexes, noiseAmplitude, noiseScale, seed)
 
     addUIElements()
 end
@@ -106,22 +99,14 @@ function love.keypressed(key)
     if key == "f5" then gen.debugFlags["show_terrain"] = not gen.debugFlags["show_terrain"] end
     if key == "f6" then gen.debugFlags["use_textures"] = not gen.debugFlags["use_textures"] end
 
-    if key == "r" then rowHexesInput = not rowHexesInput end
-    if key == "s" then noiseScaleInput = not noiseScaleInput end
-    if key == "a" then noiseAmplitudeInput = not noiseAmplitudeInput end
+    --if key == "r" then rowHexesInput = not rowHexesInput end
+    --if key == "s" then noiseScaleInput = not noiseScaleInput end
+    --if key == "a" then noiseAmplitudeInput = not noiseAmplitudeInput end
 
     --if key == "l" then importAndLoadSettingsFile() end
-    if key == "e" then exportSettingsFile() end
+    --if key == "e" then exportSettingsFile() end
 
-    if key == "backspace" then
-        local currentText = (rowHexesInput and rowHexesIText) or (noiseScaleInput and noiseScaleIText) or (noiseAmplitudeInput and noiseAmplitudeIText) or ""
-        
-        local byteoffset = utf8.offset(currentText, -1)
-        if byteoffset then
-            local newText = string.sub(currentText, 1, byteoffset - 1)
-            updateActiveInput(newText)
-        end
-    end
+    UIM.keypressed(key)
 end
 
 function love.mousepressed(x, y, button, istouch, presses)
@@ -145,7 +130,7 @@ function love.mousereleased(x, y, button, istouch, presses)
 end
 
 function love.wheelmoved(x, y)
-    UIM.wheelmoved(y, speed)
+    UIM.wheelmoved(y, scrollspeed)
 end
 
 function love.resize(w, h)
@@ -162,15 +147,7 @@ function love.update(dt)
 end
 
 function love.textinput(t)
-    if not t:match("[%d.,]") then return end
-
-    local currentText = (rowHexesInput and rowHexesIText) or (noiseScaleInput and noiseScaleIText) or (noiseAmplitudeInput and noiseAmplitudeIText) or ""
-
-    if (t == "." or t == ",") and (currentText:find("%.") or currentText:find(",")) then
-        return
-    end
-
-    updateActiveInput(currentText .. t)
+    UIM.textinput(t)
 end
 
 function love.draw()
@@ -323,6 +300,49 @@ function addUIElements()
             end
         }
     )
+
+    --Input Field: x, y, w, h, bColor, border, borColor, borThickness, pad, text, isNumeric, decimals,
+    UIM.addInputField(
+        "row_hexes",
+        {
+            x = UL[1] + UI_LEFT_SAFEZONE + 10, y = UL[2] + 80, w = 150, h = 50, bColor = {0.25, 0.25, 0.25}, border = true,
+            borColor = {1,1,1}, borThickness = 1, pad = 4, isNumeric = true,
+            ontxtfunc = function(inpf)
+                local val = inpf:getText()
+                rowHexes = val
+                gen.generate(CANVAS_SIZE, rowHexes, noiseAmplitude, noiseScale, seed, true)
+            end,
+            basetxt = "hexes per row: ", text = tostring(rowHexes)
+        }
+    )
+
+    UIM.addInputField(
+        "noise_amplitude",
+        {
+            x = UL[1] + UI_LEFT_SAFEZONE + 10, y = UL[2] + 140, w = 150, h = 50, bColor = {0.25, 0.25, 0.25}, border = true,
+            borColor = {1,1,1}, borThickness = 1, pad = 4, isNumeric = true,
+            ontxtfunc = function(inpf)
+                local val = inpf:getText()
+                noiseAmplitude = val
+                gen.generate(CANVAS_SIZE, rowHexes, noiseAmplitude, noiseScale, seed)
+            end,
+            basetxt = "noise amplitude: ", text = tostring(noiseAmplitude)
+        }
+    )
+
+    UIM.addInputField(
+        "noise_scale",
+        {
+            x = UL[1] + UI_LEFT_SAFEZONE + 10, y = UL[2] + 200, w = 150, h = 50, bColor = {0.25, 0.25, 0.25}, border = true,
+            borColor = {1,1,1}, borThickness = 1, pad = 4, isNumeric = true,
+            ontxtfunc = function(inpf)
+                local val = inpf:getText()
+                noiseScale = val
+                gen.generate(CANVAS_SIZE, rowHexes, noiseAmplitude, noiseScale, seed)
+            end,
+            basetxt = "noise scale: ", text = tostring(noiseScale)
+        }
+    )
 end
 
 function updateViewport()
@@ -339,32 +359,6 @@ function updateViewport()
 
     offsetX = UI_LEFT_SAFEZONE + (availableW - minSide) / 2
     offsetY = UI_TOP_SAFEZONE + (availableH - minSide) / 2
-end
-
-function updateActiveInput(newText)
-    local changed, resetMap = false, false
-    
-    local formatted = newText:gsub(",", ".")
-    local num = tonumber(formatted) or 0
-
-    if rowHexesInput then
-        rowHexesIText = newText
-        rowHexes = num
-        changed = true
-        resetMap = true
-    elseif noiseScaleInput then
-        noiseScaleIText = newText
-        noiseScale = num
-        changed = true
-    elseif noiseAmplitudeInput then
-        noiseAmplitudeIText = newText
-        amplitude = num
-        changed = true
-    end
-
-    if changed then
-        gen.generate(CANVAS_SIZE, rowHexes, amplitude, noiseScale, seed, resetMap)
-    end
 end
 
 -- drawing stuff
@@ -466,17 +460,12 @@ function drawUI()
     --real UI (mostly still debug)
 
     love.graphics.setColor(1, 1, 1)
-    local input_debug = "RHI: " .. tostring(rowHexesInput) .. "\nNSI: " .. tostring(noiseScaleInput) .. "\nNAI: " .. tostring(noiseAmplitudeInput)
-    love.graphics.print(input_debug, UL[1] + 70, UL[2] + 5)
 
-    local hexPerRow_TXT = "row hexes: " .. rowHexes
-    local noiseScale_TXT = ", noise scale: " .. noiseScale
-    local noiseAmplitude_TXT = ", noise amplitude: " .. amplitude
-    local paintingHexagon_TXT = ", painting: " .. tostring(paintingHexagons)
+    local paintingHexagon_TXT = "painting: " .. tostring(paintingHexagons)
     local placingLandmarks_TXT = ", placing LM: " .. tostring(placingLandmarks)
     local removingLandmark_TXT = ", removing LM: " .. tostring(removingLandmark)
 
-    local totalTXT = hexPerRow_TXT .. noiseScale_TXT .. noiseAmplitude_TXT .. paintingHexagon_TXT .. placingLandmarks_TXT .. removingLandmark_TXT
+    local totalTXT = paintingHexagon_TXT .. placingLandmarks_TXT .. removingLandmark_TXT
 
     love.graphics.print(totalTXT, UT[1] + 10, UT[2] + 10)
     love.graphics.print("tot lm: " .. #landmarks, UT[1] + 20 + love.graphics.getFont():getWidth(totalTXT), UT[2] + 10)

@@ -88,11 +88,12 @@ function DropDown:mousepressed(mx, my)
 end
 
 function DropDown:wheelmoved(y, speed)
+    if not self.open then return end
+
     local rows = math.ceil(#self.content/2)
     local itm_size = (self.extended_width - 3 * self.horizontal_padding) / 2
     local MSOY = rows*itm_size + (rows-1)*self.vertical_padding + self.vertical_padding
     self.scrollOffsetY = math.clamp(MSOY, 0, self.scrollOffsetY - y*speed)
-    print(self.scrollOffsetY)
     self:updateLayout()
 end
 

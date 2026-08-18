@@ -1,14 +1,16 @@
-local button = require "button"
-local dropdown = require "dropdown"
-local slider = require "slider"
+local button = require "ui_elements.button"
+local dropdown = require "ui_elements.dropdown"
+local slider = require "ui_elements.slider"
+local inputfield = require "ui_elements.inputfield"
 
 local UIM = {}
 
 local buttons = {}
 local dropdowns = {}
 local sliders = {}
+local fields = {}
 
---NOT SURE BUT PROBABLY IN THE FUTURE THE LOOPS WILL GO AWAI
+--NOT SURE BUT PROBABLY IN THE FUTURE THE LOOPS WILL GO AWAY
 
 -- UI functions // love functions
 
@@ -25,6 +27,22 @@ function UIM.mousepressed(mx, my, mbutton)
         for name, slid in pairs(sliders) do
             slid:mousepressed(mx, my)
         end
+
+        for name, ifild in pairs(fields) do
+            ifild:mousepressed(mx, my)
+        end
+    end
+end
+
+function UIM.textinput(t)
+    for name, ifild in pairs(fields) do
+        ifild:textinput(t)
+    end
+end
+
+function UIM.keypressed(key)
+    for name, ifild in pairs(fields) do
+        ifild:keypressed(key)
     end
 end
 
@@ -61,6 +79,10 @@ function UIM.draw(mx, my)
         slid:draw()
     end
 
+    for name, ifild in pairs(fields) do
+        ifild:draw()
+    end
+
     for name, button in pairs(buttons) do
         button:drawTooltip(mx, my)
     end
@@ -90,6 +112,10 @@ end
 
 function UIM.addSlider(name, params)
     sliders[name] = slider(params)
+end
+
+function UIM.addInputField(name, params)
+    fields[name] = inputfield(params)
 end
 
 -- getting UI elements by name
@@ -124,7 +150,11 @@ function UIM.checkOnUI(mx, my, lmb)
     end
 
     for name, slid in pairs(sliders) do
-        return slid:mouseInside(mx, my)
+        if slid:mouseInside(mx, my) then return true end
+    end
+
+    for name, ifild in pairs(fields) do
+        if ifild:inside(mx, my) then return true end
     end
 
     return false
