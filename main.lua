@@ -59,6 +59,7 @@ local landmarkScale = 1
 
 local lmbDown = false
 local rmbDown = false
+local wheelDown = false
 
 local rowHexes = 10
 local noiseScale = 0.05
@@ -75,7 +76,30 @@ local waveSegments = 12
 local scrollspeed = 50
 local seed
 
+local screenMouseX, screenMouseY = love.mouse.getPosition()
+local deltaX, deltaY = 0, 0
+local moveCursor = love.mouse.newCursor("sprites/cursors/move.png", 16, 16)
+
+local zoomSpeed = 1
+local zoomLevel = 1
+local zoomingCamera = false
+
 --FOR THE FUTURE: ADD CUSTOM CURSOR FOR DIFFERENT EDITING MODES (THIS WILL REMOVE THE DEBUG FOR PAINTING, PLACING, REMOVING)
+
+-- HELPER FUNCTIONS, THIS ARE LOCAL SO THEY SATAY AT THE TOP
+
+local function getClampingCanvasPositionLimits()
+    local mapDrawSize = CANVAS_SIZE * scaleFactor * zoomLevel
+    local margin = mapDrawSize * 0.05
+
+    local minX = UL[1] + UI_LEFT_SAFEZONE + margin - mapDrawSize
+    local minY = UL[2] + margin - mapDrawSize
+    
+    local maxX = (love.graphics.getWidth() - UI_RIGHT_SAFEZONE) - margin
+    local maxY = (love.graphics.getHeight() - UI_BOTTOM_SAFEZONE) - margin
+
+    return minX, minY, maxX, maxY
+end
 
 --love functions
 
@@ -113,6 +137,9 @@ function love.mousepressed(x, y, button, istouch, presses)
         lmbDown = true
     elseif button == 2 then
         rmbDown = true
+    elseif button == 3 then
+        wheelDown = true
+        love.mouse.setCursor(moveCursor)
     end
 
     UIM.mousepressed(x, y, button)
@@ -123,12 +150,35 @@ function love.mousereleased(x, y, button, istouch, presses)
         lmbDown = false
     elseif button == 2 then
         rmbDown = false
+    elseif button == 3 then
+        wheelDown = false
+        love.mouse.setCursor()
     end
 
     UIM.mousereleased(button)
 end
 
 function love.wheelmoved(x, y)
+    if not UIM.checkOnUI(screenMouseX, screenMouseY) then 
+        local dir = y/math.abs(y)
+        local oldZoom = zoomLevel
+        local newZoom = math.clamp(0.5, 2, zoomLevel + 0.05 * dir)
+
+        if newZoom ~= oldZoom then
+            local cmx, cmy = getCanvasMousePosition()
+
+            zoomLevel = newZoom
+
+            offsetX = screenMouseX - (cmx * scaleFactor * zoomLevel)
+            offsetY = screenMouseY - (cmy * scaleFactor * zoomLevel)
+
+            local minX, minY, maxX, maxY = getClampingCanvasPositionLimits()
+
+            offsetX = math.clamp(minX, maxX, offsetX)
+            offsetY = math.clamp(minY, maxY, offsetY)
+        end
+    end
+
     UIM.wheelmoved(y, scrollspeed)
 end
 
@@ -137,6 +187,16 @@ function love.resize(w, h)
 end
 
 function love.update(dt)
+    local px, py = screenMouseX, screenMouseY
+    screenMouseX, screenMouseY = love.mouse.getPosition()
+    deltaX, deltaY = screenMouseX - px, screenMouseY - py
+    if wheelDown then
+        local minX, minY, maxX, maxY = getClampingCanvasPositionLimits()
+
+        offsetX = math.clamp(minX, maxX, offsetX + deltaX)
+        offsetY = math.clamp(minY, maxY, offsetY + deltaY)
+    end
+
     tryPaintingHexagon()
     tryPlacingLandmark()
     tryRemovingLandmark()
@@ -150,6 +210,7 @@ function love.textinput(t)
 end
 
 function love.draw()
+    --camera implementation
     love.graphics.setCanvas({mapCanvas, stencil = true})
     love.graphics.clear(0.1, 0.1, 0.1, 1)
 
@@ -158,7 +219,7 @@ function love.draw()
     love.graphics.setCanvas()
 
     love.graphics.setColor(1, 1, 1)
-    love.graphics.draw(mapCanvas, offsetX, offsetY, 0, scaleFactor, scaleFactor)
+    love.graphics.draw(mapCanvas, offsetX, offsetY, 0, scaleFactor*zoomLevel, scaleFactor*zoomLevel)
 
     drawUI()
 end
@@ -166,12 +227,11 @@ end
 -- mouse coordinates
 
 function getCanvasMousePosition()
-    local mx, my = love.mouse.getPosition()
-    return (mx - offsetX)/scaleFactor, (my - offsetY)/scaleFactor
+    return (screenMouseX - offsetX)/(scaleFactor*zoomLevel), (screenMouseY - offsetY)/(scaleFactor*zoomLevel)
 end
 
-function getUIMouseFromCanvas(mx, my)
-    return mx*scaleFactor + offsetX, my*scaleFactor + offsetY
+function getUIMouseFromCanvas(cmx, cmy)
+    return cmx*scaleFactor*zoomLevel + offsetX, cmy*scaleFactor*zoomLevel + offsetY
 end
 
 -- miscellaneus
@@ -393,9 +453,9 @@ function drawLandMarkPreview()
 
     local lms = landmark_sprites[currentLandmark]
     local img = lms.img
-    local mx, my = getCanvasMousePosition()
+    local cmx, cmy = getCanvasMousePosition()
     local ox, oy = img:getWidth()/2, img:getHeight()/2
-    love.graphics.draw(img, mx, my, 0, lms.scale * landmarkScale, lms.scale * landmarkScale, ox, oy)
+    love.graphics.draw(img, cmx, cmy, 0, lms.scale * landmarkScale, lms.scale * landmarkScale, ox, oy)
 end
 
 function drawShorelineWaves()
@@ -480,23 +540,19 @@ function drawUI()
     love.graphics.print(totalTXT, UT[1] + 10, UT[2] + 10)
     love.graphics.print("tot lm: " .. #landmarks, UT[1] + 20 + love.graphics.getFont():getWidth(totalTXT), UT[2] + 10)
 
-    local mx, my =  getCanvasMousePosition()
-    local mouseCoordinates_TXT = "mx, my: " .. math.round(mx) .. ", " .. math.round(my)
+    love.graphics.print("zoom: " .. zoomLevel * 100 .. "%", UL[1] + UI_LEFT_SAFEZONE + 10, UI_TOP_SAFEZONE + 10)
 
-    love.graphics.print(mouseCoordinates_TXT, UL[1] + UI_LEFT_SAFEZONE + 10, UI_TOP_SAFEZONE + 10)
     love.graphics.print("f1: toggle center vis, f2: toggle edge vis, f3: toggle fill vis, f4: toggle vertices, f5: toggle terrain, f6: toggle textures", UT[1] + 10, UT[2] + 30)
 
     local lmscaleTXT = math.round(10000*landmarkScale)/100 .. "%"
     love.graphics.print("landmark scale: " .. lmscaleTXT, UL[1] + 10, UL[2] + 465)
-
-    local mx, my = love.mouse.getPosition(x, y)
 
     local expBtn = UIM.getButton("export")
     if expBtn then
         expBtn.x = UR[1] - 60
     end
 
-    UIM.draw(mx, my)
+    UIM.draw(screenMouseX, screenMouseY)
 end
 
 -- modifing map
@@ -510,11 +566,11 @@ end
 function tryPaintingHexagon()
     if not paintingHexagons then return end
 
-    local wx, wy = getCanvasMousePosition()
+    local cmx, cmy = getCanvasMousePosition()
 
-    if wx < -gen.radius or wx > CANVAS_SIZE + gen.radius or wy < -gen.radius or wy > CANVAS_SIZE + gen.radius then return end 
+    if cmx < -gen.radius or cmx > CANVAS_SIZE + gen.radius or cmy < -gen.radius or cmy > CANVAS_SIZE + gen.radius then return end 
 
-    local q, r = gen.worldToHex(wx, wy)
+    local q, r = gen.worldToHex(cmx, cmy)
     local hex = gen.getHex(q, r)
 
     if hex == nil then return end
@@ -523,8 +579,7 @@ function tryPaintingHexagon()
 
     if not lmbDown and not rmbDown then return end
 
-    local umx, umy = love.mouse.getPosition()
-    if UIM.checkOnUI(umx, umy, lmbDown) then return end
+    if UIM.checkOnUI(screenMouseX, screenMouseY, lmbDown) then return end
 
     if lmbDown then hex.terrain = "land" end
     if rmbDown then hex.terrain = "water" end
@@ -538,17 +593,16 @@ function tryPlacingLandmark()
     if currentLandmark == nil or landmark_sprites[currentLandmark] == nil then return end
     if lmTimer > 0 then return end
 
-    local umx, umy = love.mouse.getPosition()
-    if UIM.checkOnUI(umx, umy, lmbDown) then return end
+    if UIM.checkOnUI(screenMouseX, screenMouseY, lmbDown) then return end
 
-    local mx, my = getCanvasMousePosition()
+    local cmx, cmy = getCanvasMousePosition()
 
-    if mx < 0 or mx > CANVAS_SIZE or my < 0 or my > CANVAS_SIZE then return end 
+    if cmx < 0 or cmx > CANVAS_SIZE or cmy < 0 or cmy > CANVAS_SIZE then return end 
 
     local lm = landmark_sprites[currentLandmark]
     local img = lm.img
     local ox, oy = img:getWidth()/2, img:getHeight()/2
-    table.insert(landmarks, {img, mx, my, lm.scale * landmarkScale, ox, oy})
+    table.insert(landmarks, {img, cmx, cmy, lm.scale * landmarkScale, ox, oy})
     lmTimer = landmarkPlacingCooldown
 end
 
@@ -556,11 +610,10 @@ function tryRemovingLandmark()
     if not removingLandmark then return end
     if not lmbDown and not rmbDown then return end
 
-    local umx, umy = love.mouse.getPosition()
-    if UIM.checkOnUI(umx, umy, lmbDown) then return end
+    if UIM.checkOnUI(screenMouseX, screenMouseY, lmbDown) then return end
 
     if lmbDown then
-        local mx, my = getCanvasMousePosition()
+        local cmx, cmy = getCanvasMousePosition()
 
         for i = #landmarks, 1, -1 do
             local lm = landmarks[i]
@@ -568,7 +621,7 @@ function tryRemovingLandmark()
             local y = lm[3] - lm[6] * lm[4]
             local w, h = lm[1]:getWidth() * lm[4], lm[1]:getHeight() * lm[4] --img_w * scale
 
-            if mx >= x and mx <= x + w and my >= y and my <= y + h then
+            if cmx >= x and cmx <= x + w and cmy >= y and cmy <= y + h then
                 table.remove(landmarks, i)
                 return
             end
@@ -603,8 +656,8 @@ function saveSettings()
     local settingsData = 
     {
         seed = seed,
-        rowHexes = rowHexes
-        noiseAmplitude = noiseAmplitude
+        rowHexes = rowHexes,
+        noiseAmplitude = noiseAmplitude,
         noiseScale = noiseScale
     }
 
@@ -632,6 +685,10 @@ function loadLandmarksFromDir(dirPath)
     -- read all files in dirpath
     -- add to landmark_sprites (follow landmark_sprites rules)
 end
+
+-- TO LOAD OTHER FILES LIKE SETTINGS AND MAP WE NEED TO OPEN DI FILE EXPLORER
+-- FOR MAP WE COULD LOAD BY DEFAULT THE LATEST MAP SAVED
+-- WIP
 
 function exportMap()
     local timestamp = os.date("%Y-%m-%d_%H-%M-%S")
