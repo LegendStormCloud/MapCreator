@@ -1,4 +1,4 @@
 function love.conf(t)
-    t.identity = "Map Creator"
+    t.identity = "MapCreator"
     t.window.resizable = true
 end

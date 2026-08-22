@@ -15,22 +15,24 @@ function DropDown:new(params)
     self.horizontal_padding = params.hpad
     self.vertical_padding = params.vpad
     
+    self.scrollOffsetY = 0
+
     self.content = params.content or {}
 
+    self.onclickfunction = params.onclick
+    
+    self.tooltip = params.tooltip or ""
+    self.background_sprite = params.bPath and love.graphics.newImage(params.bPath) or nil
+
+    self.is_open = false
+
     --content passed needs to be like {{name1 = item1}, {name2 = item2}, ...} (if any is passed)
+
     if content then
         for i, item in ipairs(content) do
             self:addContent(item)
         end
     end
-    
-    self.onclickfunction = params.onclick
-    
-    self.tooltip = params.tooltip or ""
-    self.background_sprite = params.bPath and love.graphics.newImage(params.bPath) or nil
-    self.is_open = false
-
-    self.scrollOffsetY = 0
 end
 
 function DropDown:updateLayout()
@@ -100,12 +102,15 @@ function DropDown:mousepressed(mx, my)
 end
 
 function DropDown:wheelmoved(y, speed)
-    if not self.open then return end
+    if not self.is_open then return end
 
     local rows = math.ceil(#self.content/2)
+    print(rows)
     local itm_size = (self.extended_width - 3 * self.horizontal_padding) / 2
-    local MSOY = rows*itm_size + (rows-1)*self.vertical_padding + self.vertical_padding
-    self.scrollOffsetY = math.clamp(MSOY, 0, self.scrollOffsetY - y*speed)
+    local MSOY = rows*itm_size + (rows+1)*self.vertical_padding - self.extended_height
+    print(MSOY)
+    self.scrollOffsetY = math.clamp(-MSOY, 0, self.scrollOffsetY + y*speed)
+    print(self.scrollOffsetY)
     self:updateLayout()
 end
 

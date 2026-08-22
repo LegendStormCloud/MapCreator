@@ -1,13 +1,18 @@
 local utf8 = require "utf8"
-local json = "libraries.json"
+local json = require "libraries.json"
 
 local gen = require "generator"
 local UIM = require "uimanager"
 local utils = require "utils"
 
+local LOVE_DIR = love.filesystem.getSaveDirectory()
+local SETTINGS_DIR = LOVE_DIR ..  "/Settings"
+local MAPSAVES_DIR = LOVE_DIR .. "/MapSaves"
+local LANDMARKS_DIR = LOVE_DIR .. "/Landmarks"
+
 local MIN_WINDOW_WIDTH = 1280
 local MIN_WINDOW_HEIGHT = 720
-local CANVAS_SIZE = 1500
+local CANVAS_SIZE = 2000
 
 local UI_LEFT_SAFEZONE = 175
 local UI_RIGHT_SAFEZONE = 0
@@ -29,27 +34,11 @@ local removingLandmark = false
 
 local currentLandmark = nil
 
---TO REMOVE: SCALE
---TO ADD: CATEGORY: 
---STANDARD LANDMARK DIMENSION 512X512 OR 256X256 (GOTTA DECIDE YET)
---DRAWING NEEDS TO BE ALREADY PROPORTIONED
+--STANDARD SIZE: 512X512
+--DRAWINGS SHOULD BE ALREADY SCALED -> NO INNER SCALE 
+--MAYBE ADD BOUNDING BOX FOR REMOVAL DETECTION
 
-local landmark_sprites = {
-    mountain = {
-        img = love.graphics.newImage("sprites/landmarks/mountain.png"),
-        scale = 1
-    },
-
-    skull = {
-        img = love.graphics.newImage("sprites/landmarks/skull.png"),
-        scale = 0.5
-    },
-
-    tower = {
-        img = love.graphics.newImage("sprites/landmarks/tower.png"),
-        scale = 0.75
-    }
-}
+local landmark_sprites = {}
 
 local landmarks = {}
 
@@ -74,7 +63,7 @@ local waveSpeed = 3.0
 local waveSegments = 12
 
 local scrollspeed = 50
-local seed
+local seed = 0
 
 local screenMouseX, screenMouseY = love.mouse.getPosition()
 local deltaX, deltaY = 0, 0
@@ -83,6 +72,8 @@ local moveCursor = love.mouse.newCursor("sprites/cursors/move.png", 16, 16)
 local zoomSpeed = 1
 local zoomLevel = 1
 local zoomingCamera = false
+
+local wasFocused = true
 
 --FOR THE FUTURE: ADD CUSTOM CURSOR FOR DIFFERENT EDITING MODES (THIS WILL REMOVE THE DEBUG FOR PAINTING, PLACING, REMOVING)
 
@@ -110,12 +101,10 @@ function love.load()
 
     updateViewport()
 
-    love.math.setRandomSeed(os.time())
-    seed = love.math.getRandomSeed()
-
-    gen.load(CANVAS_SIZE, rowHexes, noiseAmplitude, noiseScale, seed)
-
     addUIElements()
+    uploadLandmarks()
+
+    loadSettings("latest_settings")
 end
 
 function love.keypressed(key)
@@ -126,8 +115,18 @@ function love.keypressed(key)
     if key == "f5" then gen.debugFlags["show_terrain"] = not gen.debugFlags["show_terrain"] end
     if key == "f6" then gen.debugFlags["use_textures"] = not gen.debugFlags["use_textures"] end
 
-    --if key == "l" then importAndLoadSettingsFile() end
-    --if key == "e" then exportSettingsFile() end
+    local ctrlDown = love.keyboard.isDown("lctrl", "lgui")
+    local shiftDown = love.keyboard.isDown("lshift")
+
+    if ctrlDown then
+        if key == "s" then
+            -- save map
+        elseif key == "e" then
+            exportMap()
+        elseif key == "l" then
+            uploadLandmarks(true)
+        end
+    end
 
     UIM.keypressed(key)
 end
@@ -209,6 +208,14 @@ function love.textinput(t)
     UIM.textinput(t)
 end
 
+function love.focus(f)
+    --logica dell'uload
+    if f == true and wasFocused == false then
+        uploadLandmarks()
+    end
+    wasFocused = f
+end
+
 function love.draw()
     --camera implementation
     love.graphics.setCanvas({mapCanvas, stencil = true})
@@ -222,6 +229,11 @@ function love.draw()
     love.graphics.draw(mapCanvas, offsetX, offsetY, 0, scaleFactor*zoomLevel, scaleFactor*zoomLevel)
 
     drawUI()
+end
+
+function love.quit()
+    saveSettings("latest_settings")
+    --saveMap("latest_map")
 end
 
 -- mouse coordinates
@@ -320,41 +332,6 @@ function addUIElements()
         }
     )
 
-    --Buttons: x, y, w, h, bColor, onclick, tooltip, bPath
-    
-    UIM.addDropDownButton(
-        "landmarks", 
-        {
-            x = 0, y = 0, w = 45, h = 45, bColor = {0.8, 0.8, 0.8, 1},
-            onclick = function()
-                currentLandmark = "skull"
-            end,
-            bPath = "sprites/landmarks/skull.png"
-        }
-    )
-
-    UIM.addDropDownButton(
-        "landmarks", 
-        {
-            x = 0, y = 0, w = 45, h = 45, bColor = {0.8, 0.8, 0.8, 1},
-            onclick = function()
-                currentLandmark = "tower"
-            end,
-            bPath = "sprites/landmarks/tower.png"
-        }
-    )
-
-    UIM.addDropDownButton(
-        "landmarks", 
-        {
-            x = 0, y = 0, w = 45, h = 45, bColor = {0.8, 0.8, 0.8, 1},
-            onclick = function()
-                currentLandmark = "mountain"
-            end,
-            bPath = "sprites/landmarks/mountain.png"
-        }
-    )
-
     -- Slider: x, y, fOffsetX, fOffsetY, bWidth, bHeight, bCol, fWidth, fHeight, fCol, dir, wholeN, minVal, maxVal, v, onvalchanged, interactive, hRadius
     UIM.addSlider(
         "scale_lm",
@@ -370,7 +347,7 @@ function addUIElements()
 
     --Input Field: x, y, w, h, bColor, border, borColor, borThickness, pad, text, isNumeric, decimals,
     UIM.addInputField(
-        "row_hexes",
+        "rowHexes",
         {
             group = "settings",
             x = UL[1] + UI_LEFT_SAFEZONE + 10, y = UL[2] + 80, w = 150, h = 50, bColor = {0.25, 0.25, 0.25}, border = true,
@@ -385,7 +362,7 @@ function addUIElements()
     )
 
     UIM.addInputField(
-        "noise_amplitude",
+        "noiseAmplitude",
         {
             group = "settings",
             x = UL[1] + UI_LEFT_SAFEZONE + 10, y = UL[2] + 140, w = 150, h = 50, bColor = {0.25, 0.25, 0.25}, border = true,
@@ -400,7 +377,7 @@ function addUIElements()
     )
 
     UIM.addInputField(
-        "noise_scale",
+        "noiseScale",
         {
             group = "settings",
             x = UL[1] + UI_LEFT_SAFEZONE + 10, y = UL[2] + 200, w = 150, h = 50, bColor = {0.25, 0.25, 0.25}, border = true,
@@ -413,6 +390,30 @@ function addUIElements()
             basetxt = "noise scale: ", text = tostring(noiseScale)
         }
     )
+end
+
+function updateLandmarkButtons()
+    local options = {}
+    for name, _ in pairs(landmark_sprites) do
+        table.insert(options, name)
+    end
+    
+    --maybe in future if there will be more drawings i coudl add more sorting options
+    table.sort(options)
+    
+    --Buttons: x, y, w, h, bColor, onclick, tooltip, bPath
+    for i, name in ipairs(options) do
+        UIM.addDropDownButton(
+            "landmarks",
+            {
+                x = 0, y = 0, w = 45, h = 45, bColor = {0.8, 0.8, 0.8, 1},
+                onclick = function()
+                    currentLandmark = name
+                end,
+                bPath = landmark_sprites[name].path
+            }
+        )
+    end
 end
 
 function updateViewport()
@@ -451,11 +452,10 @@ function drawLandMarkPreview()
     if not placingLandmarks then return end
     if currentLandmark == nil or landmark_sprites[currentLandmark] == nil then return end
 
-    local lms = landmark_sprites[currentLandmark]
-    local img = lms.img
+    local img = landmark_sprites[currentLandmark].img
     local cmx, cmy = getCanvasMousePosition()
     local ox, oy = img:getWidth()/2, img:getHeight()/2
-    love.graphics.draw(img, cmx, cmy, 0, lms.scale * landmarkScale, lms.scale * landmarkScale, ox, oy)
+    love.graphics.draw(img, cmx, cmy, 0, landmarkScale, landmarkScale, ox, oy)
 end
 
 function drawShorelineWaves()
@@ -539,10 +539,9 @@ function drawUI()
 
     love.graphics.print(totalTXT, UT[1] + 10, UT[2] + 10)
     love.graphics.print("tot lm: " .. #landmarks, UT[1] + 20 + love.graphics.getFont():getWidth(totalTXT), UT[2] + 10)
-
-    love.graphics.print("zoom: " .. zoomLevel * 100 .. "%", UL[1] + UI_LEFT_SAFEZONE + 10, UI_TOP_SAFEZONE + 10)
-
     love.graphics.print("f1: toggle center vis, f2: toggle edge vis, f3: toggle fill vis, f4: toggle vertices, f5: toggle terrain, f6: toggle textures", UT[1] + 10, UT[2] + 30)
+    
+    love.graphics.print("zoom: " .. zoomLevel * 100 .. "%", UL[1] + UI_LEFT_SAFEZONE + 10, UI_TOP_SAFEZONE + 10)
 
     local lmscaleTXT = math.round(10000*landmarkScale)/100 .. "%"
     love.graphics.print("landmark scale: " .. lmscaleTXT, UL[1] + 10, UL[2] + 465)
@@ -599,10 +598,9 @@ function tryPlacingLandmark()
 
     if cmx < 0 or cmx > CANVAS_SIZE or cmy < 0 or cmy > CANVAS_SIZE then return end 
 
-    local lm = landmark_sprites[currentLandmark]
-    local img = lm.img
+    local img = landmark_sprites[currentLandmark].img
     local ox, oy = img:getWidth()/2, img:getHeight()/2
-    table.insert(landmarks, {img, cmx, cmy, lm.scale * landmarkScale, ox, oy})
+    table.insert(landmarks, {img, cmx, cmy, landmarkScale, ox, oy})
     lmTimer = landmarkPlacingCooldown
 end
 
@@ -650,9 +648,43 @@ local function createSaveFile(filepath, data)
     end
 end
 
+local function loadSaveFile(filepath)
+    if not love.filesystem.getInfo(filepath) then
+        print("ERROR: File non trovato -> " .. filepath)
+        return nil
+    end
+
+    local contents, size = love.filesystem.read(filepath)
+    if not contents then
+        print("ERROR: Impossibile leggere il file -> " .. filepath)
+        return nil
+    end
+
+    local success, data = pcall(json.decode, contents)
+    if success then
+        return data
+    else
+        print("ERROR: Parsing JSON fallito per -> " .. filepath)
+        return nil
+    end
+end
+
+local function openFileExplorer(fullURL, dirName)
+    success = love.system.openURL(fullURL)
+    if not success then
+        local dir = love.filesystem.getInfo(dirName)
+        if dir == nil then
+            print("DIR NOT FOUND, creating new one")
+            love.filesystem.createDirectory(dirName)
+        elseif dir.type ~= "directory" then
+            print("ERROR " .. fullURL .. " IS NOT A DIRECTORY")
+        end
+    end
+end
+
 -- all settings: seed, rowHexes, amplitude, scale
 
-function saveSettings()
+function saveSettings(forcedName)
     local settingsData = 
     {
         seed = seed,
@@ -662,13 +694,14 @@ function saveSettings()
     }
 
     local timestamp = os.date("%Y-%m-%d_%H-%M-%S")
+    local filename = forcedName or "setting_" .. timestamp
 
-    createSaveFile("Settings/setting_" .. timestamp .. ".json", settingsData)
+    createSaveFile("Settings/" .. filename  .. ".json", settingsData)
 end
 
 -- all data: debug_flags, settings, all landmarks (image + scale)
 
-function saveMap()
+function saveMap(forcedName)
     local mapData =
     {
         map = gen.getMap(),
@@ -677,18 +710,73 @@ function saveMap()
     }
 
     local timestamp = os.date("%Y-%m-%d_%H-%M-%S")
+    local filename = forcedName or "save_" .. timestamp
 
-    createSaveFile("MapSaves/save_" .. timestamp .. ".json", mapData)
+    createSaveFile("MapSaves/" .. filename  .. ".json", mapData)
 end
 
-function loadLandmarksFromDir(dirPath)
-    -- read all files in dirpath
-    -- add to landmark_sprites (follow landmark_sprites rules)
+function loadSettings(filename)
+    local latest = filename:sub(6) == "latest"
+
+    local filepath = "Settings/" .. filename
+    if not filepath:match("%.json$") then
+        filepath = filepath .. ".json"
+    end
+
+    local settingsData = loadSaveFile(filepath)
+    if latest and settingsData == nil then
+        gen.generate(CANVAS_SIZE, rowHexes, noiseAmplitude, noiseScale, seed)
+        return
+    end
+
+    if settingsData then
+        local function newSeed() love.math.setRandomSeed(os.time()) return love.math.getRandomSeed() end
+        seed = settingsData.seed or newSeed()
+
+        rowHexes = settingsData.rowHexes or rowHexes
+        noiseAmplitude = settingsData.noiseAmplitude or noiseAmplitude
+        noiseScale = settingsData.noiseScale or noiseScale
+
+        local rowHexesField = UIM.getField("rowHexes")
+        if rowHexesField then rowHexesField:setText(tostring(rowHexes)) end
+
+        local noiseAmpField = UIM.getField("noiseAmplitude")
+        if noiseAmpField then noiseAmpField:setText(tostring(noiseAmplitude)) end
+
+        local noiseScaleField = UIM.getField("noiseScale")
+        if noiseScaleField then noiseScaleField:setText(tostring(noiseScale)) end
+
+        gen.generate(CANVAS_SIZE, rowHexes, noiseAmplitude, noiseScale, seed)
+        print("Settings caricati con successo da: " .. filepath)
+    end
 end
 
--- TO LOAD OTHER FILES LIKE SETTINGS AND MAP WE NEED TO OPEN DI FILE EXPLORER
--- FOR MAP WE COULD LOAD BY DEFAULT THE LATEST MAP SAVED
--- WIP
+function uploadLandmarks(openOnly)
+    openOnly = openOnly or false
+    if openOnly == true then
+        openFileExplorer(LANDMARKS_DIR, "Landmarks")
+        return
+    else
+        landmark_sprites = 
+        {
+            test_mountain = {img = love.graphics.newImage("sprites/landmarks/mountain.png"), path = "sprites/landmarks/mountain.png"},
+            test_skull = {img = love.graphics.newImage("sprites/landmarks/skull.png"), path = "sprites/landmarks/skull.png"},
+            test_tower = {img = love.graphics.newImage("sprites/landmarks/tower.png"), path = "sprites/landmarks/tower.png"}
+        }
+
+        local allFiles = love.filesystem.getDirectoryItems("Landmarks")
+        for i, file in ipairs(allFiles) do
+            local extension = file:match("^.+(%..+)$")
+            if extension and extension:lower() == ".png" then
+                local name = file:match("(.+)%..+$")
+                local _path = "Landmarks/" .. file
+                landmark_sprites[name] = {img = love.graphics.newImage(_path), path = _path}
+            end
+        end
+    end
+
+    updateLandmarkButtons()
+end
 
 function exportMap()
     local timestamp = os.date("%Y-%m-%d_%H-%M-%S")
