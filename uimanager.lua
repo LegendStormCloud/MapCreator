@@ -171,6 +171,24 @@ function UIM.getDropDown(name) return dropdowns[name] end
 function UIM.getSlider(name) return sliders[name] end
 function UIM.getField(name) return fields[name] end
 
+function UIM.getGroupItems(gname)
+    local group = groups[gname]
+    local items = {}
+    for i, elmt in ipairs(group.elements) do
+        if elmt.type == "button" then
+            items[elmt.name] = buttons[elmt.name]
+        elseif elmt.type == "dropdown" then
+            items[elmt.name] = dropdowns[elmt.name]
+        elseif elmt.type == "slider" then
+            items[elmt.name] = sliders[elmt.name]
+        elseif elm.type == "field" then
+            items[elmt.name] = fields[elmt.name]
+        end
+    end
+
+    return items
+end
+
 -- Check for modifing the map
 
 function UIM.checkOnUI(mx, my, lmb)

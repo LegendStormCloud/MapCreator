@@ -22,7 +22,7 @@ function DropDown:new(params)
     self.onclickfunction = params.onclick
     
     self.tooltip = params.tooltip or ""
-    self.background_sprite = params.bPath and love.graphics.newImage(params.bPath) or nil
+    self.sprite = params.sPath and love.graphics.newImage(params.sPath) or nil
 
     self.is_open = false
 
@@ -141,10 +141,10 @@ function DropDown:draw()
     love.graphics.setColor(self.background_color)
     love.graphics.rectangle("fill", self.x, self.y, self.width, self.height)
 
-    if self.background_sprite then
+    if self.sprite then
         love.graphics.setColor(1, 1, 1, 1)
-        local sx, sy = self.width/self.background_sprite:getWidth(), self.height/self.background_sprite:getHeight()
-        love.graphics.draw(self.background_sprite, self.x, self.y, 0, sx, sy)
+        local sx, sy = self.width/self.sprite:getWidth(), self.height/self.sprite:getHeight()
+        love.graphics.draw(self.sprite, self.x, self.y, 0, sx, sy)
     end
 
     if self.is_open then

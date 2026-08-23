@@ -1,5 +1,6 @@
 local utf8 = require "utf8"
 local json = require "libraries.json"
+local ffi = require "ffi"
 
 local gen = require "generator"
 local UIM = require "uimanager"
@@ -77,6 +78,31 @@ local wasFocused = true
 
 --FOR THE FUTURE: ADD CUSTOM CURSOR FOR DIFFERENT EDITING MODES (THIS WILL REMOVE THE DEBUG FOR PAINTING, PLACING, REMOVING)
 
+-- DPI SCALING SECTION
+
+if love.system.getOS() == "Windows" then
+    pcall(function()
+        ffi.cdef[[
+            typedef enum PROCESS_DPI_AWARENESS {
+                PROCESS_DPI_UNAWARE = 0,
+                PROCESS_SYSTEM_DPI_AWARE = 1,
+                PROCESS_PER_MONITOR_DPI_AWARE = 2
+            } PROCESS_DPI_AWARENESS;
+            int SetProcessDpiAwareness(PROCESS_DPI_AWARENESS value);
+        ]]
+        local shcore = ffi.load("Shcore")
+        shcore.SetProcessDpiAwareness(2)
+    end)
+    
+    pcall(function()
+        ffi.cdef[[
+            bool SetProcessDPIAware();
+        ]]
+        local user32 = ffi.load("user32")
+        user32.SetProcessDPIAware()
+    end)
+end
+
 -- HELPER FUNCTIONS, THIS ARE LOCAL SO THEY SATAY AT THE TOP
 
 local function getClampingCanvasPositionLimits()
@@ -92,6 +118,19 @@ local function getClampingCanvasPositionLimits()
     return minX, minY, maxX, maxY
 end
 
+local function openFileExplorer(fullURL, dirName)
+    success = love.system.openURL(fullURL)
+    if not success then
+        local dir = love.filesystem.getInfo(dirName)
+        if dir == nil then
+            print("DIR NOT FOUND, creating new one")
+            love.filesystem.createDirectory(dirName)
+        elseif dir.type ~= "directory" then
+            print("ERROR " .. fullURL .. " IS NOT A DIRECTORY")
+        end
+    end
+end
+
 --love functions
 
 function love.load()
@@ -105,6 +144,7 @@ function love.load()
     uploadLandmarks()
 
     loadSettings("latest_settings")
+    loadMapData("latest_mapdata")
 end
 
 function love.keypressed(key)
@@ -176,9 +216,9 @@ function love.wheelmoved(x, y)
             offsetX = math.clamp(minX, maxX, offsetX)
             offsetY = math.clamp(minY, maxY, offsetY)
         end
+    else
+        UIM.wheelmoved(y, scrollspeed)
     end
-
-    UIM.wheelmoved(y, scrollspeed)
 end
 
 function love.resize(w, h)
@@ -233,7 +273,38 @@ end
 
 function love.quit()
     saveSettings("latest_settings")
-    --saveMap("latest_map")
+    saveMap("latest_mapdata")
+end
+
+function love.filedropped(file)
+    local filename = file:getFilename()
+
+    if not filename:match("%.json") then
+        print("FILE NOT IN JSON FORMAT")
+        return
+    end
+
+    file:open("r")
+	local content = file:read()
+    file:close()
+
+    if not content then
+        print("CANNOT READ FILE CONTENT")
+        return
+    end
+
+    local success, data = pcall(json.decode, content)
+    if not success or type(data) ~= "table" then
+        print("ERROR JSON NOT VALID")
+    end
+
+    if data.fileType == "settings" then
+        applySettingsData(data)
+    elseif data.fileType == "map" then
+        applyMapData(data)
+    else
+        print("ERROR FILETYPE NOT VALID")
+    end
 end
 
 -- mouse coordinates
@@ -249,7 +320,9 @@ end
 -- miscellaneus
 
 function addUIElements()
-    --Buttons: x, y, w, h, bColor, onclick, tooltip, bPath
+    --for groups add group = name in the parameters
+
+    --Buttons: x, y, w, h, bColor, onclick, tooltip, sPath
 
     UIM.addButton(
         "paint", 
@@ -267,7 +340,7 @@ function addUIElements()
                 lmTimer = landmarkPlacingCooldown
                 currentLandmark = nil
             end,
-            tooltip = "paint (lmb: land / rmb: water)", bPath = "sprites/paint_brush_icon.png"
+            tooltip = "paint (lmb: land / rmb: water)", sPath = "sprites/paint_brush_icon.png"
         }
     )
 
@@ -278,7 +351,7 @@ function addUIElements()
             onclick = function()
                 UIM.toggleGroup("settings")
             end,
-            tooltip = "settings panel", bPath = "sprites/settings_icon.png"
+            tooltip = "settings panel", sPath = "sprites/settings_icon.png"
         }
     )
 
@@ -297,22 +370,60 @@ function addUIElements()
 
                 currentLandmark = nil
             end,
-            tooltip = "remove landmark (lmb: single / rmb: all)", bPath = "sprites/remove_landmark_icon.png"
+            tooltip = "remove landmark (lmb: single / rmb: all)", sPath = "sprites/remove_landmark_icon.png"
+        }
+    )
+
+    -- file managment
+
+    UIM.addButton(
+        "file",
+        {
+            x = UR[1] - 55, y = UT[2] + (UI_TOP_SAFEZONE - 25)/2, w = 50, h = 25, bColor = {0.2, 0.2, 0.2, 1},
+            onclick = function()
+                UIM.toggleGroup("file")
+            end,
+            txt = "file", txtCol = {1, 1, 1}
+        }
+    )
+
+    UIM.addButton(
+        "upload_settings",
+        {
+            group = "file",
+            x = UR[1] - 110, y = UT[2] + UI_TOP_SAFEZONE + 5, w = 105, h = 25, bColor = {0.4, 0.4, 0.4, 1},
+            onclick = function()
+                openFileExplorer(SETTINGS_DIR, "Settings")
+            end,
+            txt = "upload settings"
+        }
+    )
+
+    UIM.addButton(
+        "upload_map",
+        {
+            group = "file",
+            x = UR[1] - 110, y = UT[2] + UI_TOP_SAFEZONE + 35, w = 105, h = 25, bColor = {0.4, 0.4, 0.4, 1},
+            onclick = function()
+                openFileExplorer(MAPSAVES_DIR, "MapSaves")
+            end,
+            txt = "upload map"
         }
     )
 
     UIM.addButton(
         "export",
         {
-            x = UR[1] - 60, y = UT[2] + 5, w = 50, h = 50, bColor = {0.25, 0.25, 0.25, 1},
+            group = "file",
+            x = UR[1] - 55, y = UT[2] + UI_TOP_SAFEZONE + 65, w = 50, h = 50, bColor = {0.25, 0.25, 0.25, 1},
             onclick = function()
                 exportMap()
             end,
-            tooltip = "export", bPath = "sprites/export_icon.png"
+            tooltip = "export", sPath = "sprites/export_icon.png"
         }
     )
 
-    -- DD: x, y, w, h, bColor, hpad, vpad, extW, extH, content, onclick, tooltip, bPath
+    -- DD: x, y, w, h, bColor, hpad, vpad, extW, extH, content, onclick, tooltip, sPath
 
     UIM.addDropDown(
         "landmarks",
@@ -328,7 +439,7 @@ function addUIElements()
                 removingLandmark = false
                 currentLandmark = nil
             end,
-            tooltip = "open landmark menu", bPath = "sprites/add_landmark_icon.png"
+            tooltip = "open landmark menu", sPath = "sprites/add_landmark_icon.png"
         }
     )
 
@@ -401,7 +512,7 @@ function updateLandmarkButtons()
     --maybe in future if there will be more drawings i coudl add more sorting options
     table.sort(options)
     
-    --Buttons: x, y, w, h, bColor, onclick, tooltip, bPath
+    --Buttons: x, y, w, h, bColor, onclick, tooltip, sPath
     for i, name in ipairs(options) do
         UIM.addDropDownButton(
             "landmarks",
@@ -410,7 +521,7 @@ function updateLandmarkButtons()
                 onclick = function()
                     currentLandmark = name
                 end,
-                bPath = landmark_sprites[name].path
+                sPath = landmark_sprites[name].path
             }
         )
     end
@@ -546,10 +657,12 @@ function drawUI()
     local lmscaleTXT = math.round(10000*landmarkScale)/100 .. "%"
     love.graphics.print("landmark scale: " .. lmscaleTXT, UL[1] + 10, UL[2] + 465)
 
-    local expBtn = UIM.getButton("export")
-    if expBtn then
-        expBtn.x = UR[1] - 60
+    local fileGroupItems = UIM.getGroupItems("file")
+    for name, item in pairs(fileGroupItems) do
+        item.x = UR[1] - (name == "export" and 55 or 110)
     end
+    local filebtn = UIM.getButton("file")
+    filebtn.x = UR[1] - 55
 
     UIM.draw(screenMouseX, screenMouseY)
 end
@@ -669,24 +782,12 @@ local function loadSaveFile(filepath)
     end
 end
 
-local function openFileExplorer(fullURL, dirName)
-    success = love.system.openURL(fullURL)
-    if not success then
-        local dir = love.filesystem.getInfo(dirName)
-        if dir == nil then
-            print("DIR NOT FOUND, creating new one")
-            love.filesystem.createDirectory(dirName)
-        elseif dir.type ~= "directory" then
-            print("ERROR " .. fullURL .. " IS NOT A DIRECTORY")
-        end
-    end
-end
-
 -- all settings: seed, rowHexes, amplitude, scale
 
 function saveSettings(forcedName)
     local settingsData = 
     {
+        fileType = "setting",
         seed = seed,
         rowHexes = rowHexes,
         noiseAmplitude = noiseAmplitude,
@@ -699,20 +800,141 @@ function saveSettings(forcedName)
     createSaveFile("Settings/" .. filename  .. ".json", settingsData)
 end
 
--- all data: debug_flags, settings, all landmarks (image + scale)
-
+-- indexes in lm are in order: image, posX, posY, scale, offsetX, offsetY. For details see tryPlacingLandmark
 function saveMap(forcedName)
+    local function getHexesData()
+        local map = gen.getMap()
+        local data = {}
+
+        for q, rowData in pairs(map) do
+            for r, hex in pairs(rowData) do
+                local key = q .. "_" .. r
+
+                data[key] = 
+                {
+                    --ANY ELEMENTARY VAR TYPE THAT NEEDS TO BE STORED GOES HERE
+                    terrain = hex.terrain
+                }
+            end
+        end
+
+        return data
+    end
+
+    local function getLandmarkData()
+        local landmarksData = {}
+
+        for i, lm in ipairs(landmarks) do
+            local lmName = nil
+            for name, data in pairs(landmark_sprites) do
+                if data.img == lm[1] then
+                    lmName = name
+                    break
+                end
+            end
+
+            if lmName then
+                table.insert(
+                    landmarksData,
+                    {
+                        name = lmName,
+                        x = lm[2],
+                        y = lm[3],
+                        scale = lm[4],
+                        ox = lm[5],
+                        oy = lm[6]
+                    }
+                )
+            end
+        end
+
+        return landmarksData
+    end
+
     local mapData =
     {
-        map = gen.getMap(),
-        debugFlags = gen.debugFlags,
-        landmarks = landmarks
+        fileType = "map",
+        settings = {
+            seed = seed,
+            rowHexes = rowHexes,
+            noiseAmplitude = noiseAmplitude,
+            noiseScale = noiseScale
+        },
+        hexes = getHexesData(),
+        debugFlags = debugFlags,
+        landmarks = getLandmarkData()
     }
 
     local timestamp = os.date("%Y-%m-%d_%H-%M-%S")
     local filename = forcedName or "save_" .. timestamp
 
     createSaveFile("MapSaves/" .. filename  .. ".json", mapData)
+end
+
+function applySettingsData(settingsData)
+    local function newSeed() love.math.setRandomSeed(os.time()) return love.math.getRandomSeed() end
+
+    seed = settingsData.seed or newSeed()
+    rowHexes = settingsData.rowHexes or rowHexes
+    noiseAmplitude = settingsData.noiseAmplitude or noiseAmplitude
+    noiseScale = settingsData.noiseScale or noiseScale
+
+    local rowHexesField = UIM.getField("rowHexes")
+    if rowHexesField then rowHexesField:setText(tostring(rowHexes)) end
+
+    local noiseAmpField = UIM.getField("noiseAmplitude")
+    if noiseAmpField then noiseAmpField:setText(tostring(noiseAmplitude)) end
+
+    local noiseScaleField = UIM.getField("noiseScale")
+    if noiseScaleField then noiseScaleField:setText(tostring(noiseScale)) end
+
+    gen.generate(CANVAS_SIZE, rowHexes, noiseAmplitude, noiseScale, seed, true)
+    print("Settings applied succesfully")
+end
+
+function applyMapData(mapData)
+    if mapData.settings then
+        applySettingsData(mapData.settings)
+    end
+
+    landmarks = {}
+    if mapData.landmarks then
+        for _, lmData in ipairs(mapData.landmarks) do
+            local spriteData = landmark_sprites[lmData.name]
+            if spriteData then
+                table.insert(
+                    landmarks,
+                    {
+                        spriteData.img,
+                        lmData.x,
+                        lmData.y,
+                        lmData.scale,
+                        lmData.ox,
+                        lmData.oy
+                    }
+                )
+            end
+        end
+    end
+
+    if mapData.hexes then
+        print("mapdata exists")
+        local currMap = gen.getMap()
+        for key, hexData in pairs(mapData.hexes) do
+            local q, r = key:match("([^,]+)_([^,]+)")
+            q, r = tonumber(q), tonumber(r)
+
+            if currMap and currMap[q] and currMap[q][r] then
+                currMap[q][r].terrain = hexData.terrain
+            end
+        end
+
+        gen.updateShoreline()
+    end
+
+    if mapData.debugFlags then
+        gen.debugFlags = mapData.debugFlags
+    end
 end
 
 function loadSettings(filename)
@@ -725,30 +947,25 @@ function loadSettings(filename)
 
     local settingsData = loadSaveFile(filepath)
     if latest and settingsData == nil then
-        gen.generate(CANVAS_SIZE, rowHexes, noiseAmplitude, noiseScale, seed)
+        gen.generate(CANVAS_SIZE, rowHexes, noiseAmplitude, noiseScale, seed, true)
         return
     end
 
     if settingsData then
-        local function newSeed() love.math.setRandomSeed(os.time()) return love.math.getRandomSeed() end
-        seed = settingsData.seed or newSeed()
-
-        rowHexes = settingsData.rowHexes or rowHexes
-        noiseAmplitude = settingsData.noiseAmplitude or noiseAmplitude
-        noiseScale = settingsData.noiseScale or noiseScale
-
-        local rowHexesField = UIM.getField("rowHexes")
-        if rowHexesField then rowHexesField:setText(tostring(rowHexes)) end
-
-        local noiseAmpField = UIM.getField("noiseAmplitude")
-        if noiseAmpField then noiseAmpField:setText(tostring(noiseAmplitude)) end
-
-        local noiseScaleField = UIM.getField("noiseScale")
-        if noiseScaleField then noiseScaleField:setText(tostring(noiseScale)) end
-
-        gen.generate(CANVAS_SIZE, rowHexes, noiseAmplitude, noiseScale, seed)
-        print("Settings caricati con successo da: " .. filepath)
+        applySettingsData(settingsData)
     end
+end
+
+function loadMapData(filename)
+    local filepath = "MapSaves/" .. filename
+    if not filepath:match("%.json$") then
+        filepath = filepath .. ".json"
+    end
+
+    local mapData = loadSaveFile(filepath)
+    if not mapData then return end
+
+    applyMapData(mapData)
 end
 
 function uploadLandmarks(openOnly)
