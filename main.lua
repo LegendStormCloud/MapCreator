@@ -1,19 +1,28 @@
+-- external libraries
 local utf8 = require "utf8"
 local json = require "libraries.json"
 local ffi = require "ffi"
 
+-- internal references
 local gen = require "generator"
 local UIM = require "uimanager"
 local utils = require "utils"
 
+-- full path of savedirs
 local LOVE_DIR = love.filesystem.getSaveDirectory()
 local SETTINGS_DIR = LOVE_DIR ..  "/Settings"
 local MAPSAVES_DIR = LOVE_DIR .. "/MapSaves"
 local LANDMARKS_DIR = LOVE_DIR .. "/Landmarks"
 
+-- window and canvas params
 local MIN_WINDOW_WIDTH = 1280
 local MIN_WINDOW_HEIGHT = 720
 local CANVAS_SIZE = 2000
+
+local offsetX = 0
+local offsetX = 0
+
+-- ui helper variables
 
 local UI_LEFT_SAFEZONE = 175
 local UI_RIGHT_SAFEZONE = 0
@@ -23,17 +32,14 @@ local UI_BOTTOM_SAFEZONE = 0
 local UL = {0, UI_TOP_SAFEZONE}
 local UR = {love.graphics.getWidth()-UI_RIGHT_SAFEZONE, UI_TOP_SAFEZONE}
 local UT = {0, 0}
-local UB = {0, love.graphics:getHeight()-UI_BOTTOM_SAFEZONE}
+local UB = {0, love.graphics.getHeight()-UI_BOTTOM_SAFEZONE}
 
-local scaleFactor = 1
-local offsetX = 0
-local offsetX = 0
-
+-- editing flags
 local paintingHexagons = true
 local placingLandmarks = false
 local removingLandmark = false
 
-local currentLandmark = nil
+-- landmark variables
 
 --STANDARD SIZE: 512X512
 --DRAWINGS SHOULD BE ALREADY SCALED -> NO INNER SCALE 
@@ -46,6 +52,11 @@ local landmarks = {}
 local landmarkPlacingCooldown = 0.275
 local lmTimer = 0
 local landmarkScale = 1
+
+local currentLandmark = nil
+local scaleFactor = 1
+
+-- button flags
 
 local lmbDown = false
 local rmbDown = false
@@ -76,7 +87,11 @@ local zoomingCamera = false
 
 local wasFocused = true
 
---FOR THE FUTURE: ADD CUSTOM CURSOR FOR DIFFERENT EDITING MODES (THIS WILL REMOVE THE DEBUG FOR PAINTING, PLACING, REMOVING)
+local font = love.graphics.getFont()
+local bigFont = love.graphics.newFont(24)
+
+-- FOR THE FUTURE: ADD CUSTOM CURSOR FOR DIFFERENT EDITING MODES (THIS WILL REMOVE THE DEBUG FOR PAINTING, PLACING, REMOVING)
+-- ADD UI FEEDBACK LIKE OVERLAY IF ON UI ELEMENT AND CLICK ANIM
 
 -- DPI SCALING SECTION
 
@@ -159,8 +174,13 @@ function love.keypressed(key)
     local shiftDown = love.keyboard.isDown("lshift")
 
     if ctrlDown then
-        if key == "s" then
-            -- save map
+        -- THIS IS TO PRIORITISE SHIFT OVER OTHER KEY ES: CANNOT DO CTRL + S + SHIFT TO SAVE SETTINGS
+        if shiftDown then
+            if key == "s" then
+                saveSettings()
+            end
+        elseif key == "s" then
+            saveMap()
         elseif key == "e" then
             exportMap()
         elseif key == "l" then
@@ -374,6 +394,92 @@ function addUIElements()
         }
     )
 
+    -- toggle view flags
+
+    UIM.addButton(
+        "view",
+        {
+            x = UR[1] - 110, y = UT[2] + (UI_TOP_SAFEZONE - 25)/2, w = 50, h = 25, bColor = {0.2, 0.2, 0.2, 1},
+            onclick = function()
+                UIM.setGroup("file", false)
+                UIM.toggleGroup("view")
+            end,
+            txt = "view", txtCol = {1, 1, 1}
+        }
+    )
+
+    UIM.addButton(
+        "toggle_center",
+        {
+            group = "view",
+            x = UR[1] - 165, y = UT[2] + UI_TOP_SAFEZONE + 5, w = 105, h = 25, bColor = {0.4, 0.4, 0.4, 1},
+            onclick = function()
+                gen.debugFlags["show_centers"] = not gen.debugFlags["show_centers"]
+            end,
+            txt = "centers visibility", tooltip = "f1"
+        }
+    )
+
+    UIM.addButton(
+        "toggle_edge",
+        {
+            group = "view",
+            x = UR[1] - 165, y = UT[2] + UI_TOP_SAFEZONE + 35, w = 105, h = 25, bColor = {0.4, 0.4, 0.4, 1},
+            onclick = function()
+                gen.debugFlags["show_edges"] = not gen.debugFlags["show_edges"]
+            end,
+            txt = "edge visibility", tooltip = "f2"
+        }
+    )
+
+    UIM.addButton(
+        "toggle_fill",
+        {
+            group = "view",
+            x = UR[1] - 165, y = UT[2] + UI_TOP_SAFEZONE + 65, w = 105, h = 25, bColor = {0.4, 0.4, 0.4, 1},
+            onclick = function()
+                gen.debugFlags["show_fill"] = not gen.debugFlags["show_fill"]
+            end,
+            txt = "fill visibility", tooltip = "f3"
+        }
+    )
+
+    UIM.addButton(
+        "toggle_vertices",
+        {
+            group = "view",
+            x = UR[1] - 165, y = UT[2] + UI_TOP_SAFEZONE + 95, w = 105, h = 25, bColor = {0.4, 0.4, 0.4, 1},
+            onclick = function()
+                gen.debugFlags["show_vertices"] = not gen.debugFlags["show_vertices"]
+            end,
+            txt = "vertices visibility", tooltip = "f4"
+        }
+    )
+
+    UIM.addButton(
+        "toggle_terrain",
+        {
+            group = "view",
+            x = UR[1] - 165, y = UT[2] + UI_TOP_SAFEZONE + 125, w = 105, h = 25, bColor = {0.4, 0.4, 0.4, 1},
+            onclick = function()
+                gen.debugFlags["show_terrain"] = not gen.debugFlags["show_terrain"]
+            end,
+            txt = "terrain visibility", tooltip = "f5"
+        }
+    )
+
+    UIM.addButton(
+        "toggle_texture",
+        {
+            group = "view",
+            x = UR[1] - 165, y = UT[2] + UI_TOP_SAFEZONE + 155, w = 105, h = 25, bColor = {0.4, 0.4, 0.4, 1},
+            onclick = function()
+                gen.debugFlags["use_textures"] = not gen.debugFlags["use_textures"]
+            end,
+            txt = "texture visibility", tooltip = "f6"
+        }
+    )
+
     -- file managment
 
     UIM.addButton(
@@ -381,6 +487,7 @@ function addUIElements()
         {
             x = UR[1] - 55, y = UT[2] + (UI_TOP_SAFEZONE - 25)/2, w = 50, h = 25, bColor = {0.2, 0.2, 0.2, 1},
             onclick = function()
+                UIM.setGroup("view", false)
                 UIM.toggleGroup("file")
             end,
             txt = "file", txtCol = {1, 1, 1}
@@ -388,10 +495,34 @@ function addUIElements()
     )
 
     UIM.addButton(
-        "upload_settings",
+        "save_settings",
         {
             group = "file",
             x = UR[1] - 110, y = UT[2] + UI_TOP_SAFEZONE + 5, w = 105, h = 25, bColor = {0.4, 0.4, 0.4, 1},
+            onclick = function()
+                saveSettings()
+            end,
+            txt = "save settings", tooltip = "ctrl + shift + s"
+        }
+    )
+
+    UIM.addButton(
+        "save_map",
+        {
+            group = "file",
+            x = UR[1] - 110, y = UT[2] + UI_TOP_SAFEZONE + 35, w = 105, h = 25, bColor = {0.4, 0.4, 0.4, 1},
+            onclick = function()
+                saveMap()
+            end,
+            txt = "save map", tooltip = "ctrl + s"
+        }
+    )
+
+    UIM.addButton(
+        "upload_settings",
+        {
+            group = "file",
+            x = UR[1] - 110, y = UT[2] + UI_TOP_SAFEZONE + 65, w = 105, h = 25, bColor = {0.4, 0.4, 0.4, 1},
             onclick = function()
                 openFileExplorer(SETTINGS_DIR, "Settings")
             end,
@@ -403,7 +534,7 @@ function addUIElements()
         "upload_map",
         {
             group = "file",
-            x = UR[1] - 110, y = UT[2] + UI_TOP_SAFEZONE + 35, w = 105, h = 25, bColor = {0.4, 0.4, 0.4, 1},
+            x = UR[1] - 110, y = UT[2] + UI_TOP_SAFEZONE + 95, w = 105, h = 25, bColor = {0.4, 0.4, 0.4, 1},
             onclick = function()
                 openFileExplorer(MAPSAVES_DIR, "MapSaves")
             end,
@@ -415,11 +546,11 @@ function addUIElements()
         "export",
         {
             group = "file",
-            x = UR[1] - 55, y = UT[2] + UI_TOP_SAFEZONE + 65, w = 50, h = 50, bColor = {0.25, 0.25, 0.25, 1},
+            x = UR[1] - 110, y = UT[2] + UI_TOP_SAFEZONE + 125, w = 105, h = 25, bColor = {0.4, 0.4, 0.4, 1},
             onclick = function()
                 exportMap()
             end,
-            tooltip = "export", sPath = "sprites/export_icon.png"
+            txt = "export map"
         }
     )
 
@@ -625,45 +756,81 @@ function drawShorelineWaves()
 end
 
 function drawUI()
+    -- screen dimensions
+
+    local winW, winH = love.graphics.getDimensions()
+
     --SAFE AREA
     UL = {0, UI_TOP_SAFEZONE}
-    UR = {love.graphics.getWidth()-UI_RIGHT_SAFEZONE, UI_TOP_SAFEZONE}
+    UR = {winW - UI_RIGHT_SAFEZONE, UI_TOP_SAFEZONE}
     UT = {0, 0}
-    UB = {0, love.graphics:getHeight()-UI_BOTTOM_SAFEZONE}
+    UB = {0, winH-UI_BOTTOM_SAFEZONE}
 
     love.graphics.setColor(0.1, 0.1, 0.1)
 
-    love.graphics.rectangle("fill", UL[1], UL[2], UI_LEFT_SAFEZONE, love.graphics.getHeight()-UI_BOTTOM_SAFEZONE)
-    love.graphics.rectangle("fill", UR[1], UR[2], UI_TOP_SAFEZONE, UI_RIGHT_SAFEZONE, love.graphics.getHeight()-UI_BOTTOM_SAFEZONE)
-    love.graphics.rectangle("fill", UT[1], UT[2], love.graphics.getWidth(), UI_TOP_SAFEZONE)
-    love.graphics.rectangle("fill", UB[1], UB[2], love.graphics.getWidth(), UI_BOTTOM_SAFEZONE)
+    love.graphics.rectangle("fill", UL[1], UL[2], UI_LEFT_SAFEZONE, winH-UI_BOTTOM_SAFEZONE)
+    love.graphics.rectangle("fill", UR[1], UR[2], UI_TOP_SAFEZONE, UI_RIGHT_SAFEZONE, winH-UI_BOTTOM_SAFEZONE)
+    love.graphics.rectangle("fill", UT[1], UT[2], winW, UI_TOP_SAFEZONE)
+    love.graphics.rectangle("fill", UB[1], UB[2], winW, UI_BOTTOM_SAFEZONE)
 
     --real UI (mostly still debug)
 
-    love.graphics.setColor(1, 1, 1)
+        --love.graphics.setColor(1, 1, 1)
 
-    local paintingHexagon_TXT = "painting: " .. tostring(paintingHexagons)
-    local placingLandmarks_TXT = ", placing LM: " .. tostring(placingLandmarks)
-    local removingLandmark_TXT = ", removing LM: " .. tostring(removingLandmark)
-
-    local totalTXT = paintingHexagon_TXT .. placingLandmarks_TXT .. removingLandmark_TXT
-
-    love.graphics.print(totalTXT, UT[1] + 10, UT[2] + 10)
-    love.graphics.print("tot lm: " .. #landmarks, UT[1] + 20 + love.graphics.getFont():getWidth(totalTXT), UT[2] + 10)
-    love.graphics.print("f1: toggle center vis, f2: toggle edge vis, f3: toggle fill vis, f4: toggle vertices, f5: toggle terrain, f6: toggle textures", UT[1] + 10, UT[2] + 30)
+        --local paintingHexagon_TXT = "painting: " .. tostring(paintingHexagons)
+        --local placingLandmarks_TXT = ", placing LM: " .. tostring(placingLandmarks)
+        --local removingLandmark_TXT = ", removing LM: " .. tostring(removingLandmark)
+        --
+        --local totalTXT = paintingHexagon_TXT .. placingLandmarks_TXT .. removingLandmark_TXT
+        --
+        --love.graphics.print(totalTXT, UT[1] + 10, UT[2] + 10)
+        --love.graphics.print("tot lm: " .. #landmarks, UT[1] + 20 + font:getWidth(totalTXT), UT[2] + 10)
+    --
     
+    -- info ui
+
+    love.graphics.setColor(1, 0, 0)
+    love.graphics.setFont(bigFont)
+
+    local avaW = winW - 115 -- it's 55* small buttons on the righe + 5 padding
+    local uploadString = "TO UPLOAD SETTINGS OR MAP DRAG AND DROP THE FILE ONTO THE WINDOW"
+    local txtH = bigFont:getHeight(uploadString)
+    local y = UT[2] + (UI_TOP_SAFEZONE - txtH)/2
+
+    love.graphics.printf(uploadString, UT[1], math.floor(y), avaW, "center")
+    love.graphics.setFont(font)
+
+    -- zoom map txt
+
+    love.graphics.setColor(1, 1, 1)    
     love.graphics.print("zoom: " .. zoomLevel * 100 .. "%", UL[1] + UI_LEFT_SAFEZONE + 10, UI_TOP_SAFEZONE + 10)
+
+    -- lm scale txt
 
     local lmscaleTXT = math.round(10000*landmarkScale)/100 .. "%"
     love.graphics.print("landmark scale: " .. lmscaleTXT, UL[1] + 10, UL[2] + 465)
 
-    local fileGroupItems = UIM.getGroupItems("file")
+    -- set ui position dependancies
+
+    local fileGroupItems, i = UIM.getGroupItems("file"), 1
     for name, item in pairs(fileGroupItems) do
-        item.x = UR[1] - (name == "export" and 55 or 110)
+        item.x = UR[1] - 110
+        item.y = UT[2] + UI_TOP_SAFEZONE + 5 + 30*(i-1)
+        i = i+1
     end
     local filebtn = UIM.getButton("file")
     filebtn.x = UR[1] - 55
 
+    local viewGroupItems, i = UIM.getGroupItems("view"), 1
+    for name, item in pairs(viewGroupItems) do
+        item.x = UR[1] - 165
+        item.y = UT[2] + UI_TOP_SAFEZONE + 5 + 30*(i-1)
+        i = i+1
+    end
+    local viewbtn = UIM.getButton("view")
+    viewbtn.x = UR[1] - 110
+
+    -- draw UI
     UIM.draw(screenMouseX, screenMouseY)
 end
 

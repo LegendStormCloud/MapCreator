@@ -13,8 +13,6 @@ local fields = {}
 --this groups have two values name and elements, elements is another dictionary of ui_element_type = element_name
 local groups = {}
 
---NOT SURE BUT PROBABLY IN THE FUTURE THE LOOPS WILL GO AWAY
-
 -- HELPER LOCAL FUNCTIONS
 
 local function isElementActive(uielement)
@@ -111,8 +109,6 @@ function UIM.draw(mx, my)
     end
 end
 
--- adding UI elements
-
 -- GROUP FUNCTIONS
 
 function UIM.createGroup(name, active)
@@ -122,6 +118,12 @@ end
 function UIM.toggleGroup(name)
     if groups[name] then
         groups[name].active = not groups[name].active
+    end
+end
+
+function UIM.setGroup(name, val)
+    if groups[name] then
+        groups[name].active = val
     end
 end
 
